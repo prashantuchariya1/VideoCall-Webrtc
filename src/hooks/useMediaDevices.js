@@ -13,42 +13,50 @@ const useMediaDevices = (setMessages, peerConnections) => {
 
   const getMediaDevices = async () => {
     try {
-      // Release existing stream first
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-    }
-      // Request initial permissions
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      // Attempt to get initial stream
       const initialStream = await navigator.mediaDevices.getUserMedia({ 
         audio: true, 
         video: true 
       });
-      setLocalStream(initialStream); // Set initial stream immediately
-
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(device => device.kind === 'audioinput');
-      const videoInputs = devices.filter(device => device.kind === 'videoinput');
-
-      setMediaDevices({ audioInputs, videoInputs });
-
-      // Set and use first available devices
-      const newSelectedDevices = {
-        audioInput: audioInputs[0]?.deviceId || '',
-        videoInput: videoInputs[0]?.deviceId || '',
-      };
-      setSelectedDevices(newSelectedDevices);
-
-      // Get stream with selected devices
-      if (audioInputs[0] || videoInputs[0]) {
-        getUserMedia(newSelectedDevices.audioInput, newSelectedDevices.videoInput);
-      }
+      setLocalStream(initialStream);
     } catch (err) {
-      console.error('Error getting media devices:', err);
+      console.error('Initial media access error:', err);
       setMessages(prev => [...prev, {
         sender: 'system',
         text: `Please allow camera and microphone access: ${err.message}`
       }]);
     }
+  
+    // Always enumerate devices regardless of initial stream success
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(d => d.kind === 'audioinput');
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+  
+      setMediaDevices({ audioInputs, videoInputs });
+  
+      // Update selected devices only if not already set
+      setSelectedDevices(prev => ({
+        audioInput: audioInputs[0]?.deviceId || prev.audioInput,
+        videoInput: videoInputs[0]?.deviceId || prev.videoInput
+      }));
+  
+      // Attempt to get media with first available devices if initial attempt failed
+      if (!localStream && (audioInputs.length > 0 || videoInputs.length > 0)) {
+        await getUserMedia(
+          audioInputs[0]?.deviceId || '',
+          videoInputs[0]?.deviceId || ''
+        );
+      }
+    } catch (err) {
+      console.error('Device enumeration error:', err);
+    }
   };
+
 
   const getUserMedia = async (audioDeviceId = selectedDevices.audioInput, videoDeviceId = selectedDevices.videoInput) => {
     try {
